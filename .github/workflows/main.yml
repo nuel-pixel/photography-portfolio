@@ -1,0 +1,62 @@
+name: Auto Generate Release Notes and Tags
+
+on:
+  push:
+    branches:
+      - main  # Adjust to your default branch
+  pull_request:
+    types:
+      - closed
+      - merged
+  workflow_dispatch:
+
+jobs:
+  draft-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Git
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
+      - name: Draft Release
+        uses: release-drafter/release-drafter@v5
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: draft-release
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Get the latest release draft
+        id: get_release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const { data: releases } = await github.repos.listReleases({
+              owner: context.repo.owner,
+              repo: context.repo.repo
+            });
+            const draftRelease = releases.find(release => release.draft);
+            core.setOutput('draft_release_id', draftRelease.id);
+            core.setOutput('draft_release_tag', draftRelease.tag_name);
+
+      - name: Publish the release
+        uses: actions/github-script@v6
+        with:
+          script: |
+            await github.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ steps.get_release.outputs.draft_release_id }},
+              draft: false
+            });
+
+      - name: Create and push the tag
+        run: |
+          git tag ${{ steps.get_release.outputs.draft_release_tag }}
+          git push origin ${{ steps.get_release.outputs.draft_release_tag }}
